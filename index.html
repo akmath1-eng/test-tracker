@@ -15,13 +15,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        /* Paste the original CSS styles here, or keep your existing styles below this block */
         :root { --bg: #f3f4f6; --surface: #ffffff; --border: #e5e7eb; --text-primary: #111827; --text-secondary: #6b7280; --primary: #2563eb; --accent-phy: #ef4444; --accent-chem: #10b981; --accent-math: #f59e0b; --accent-silly: #f43f5e; --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); }
         [data-theme="dark"] { --bg: #0f172a; --surface: #1e293b; --border: #334155; --text-primary: #f8fafc; --text-secondary: #94a3b8; --primary: #60a5fa; --accent-phy: #f87171; --accent-chem: #34d399; --accent-math: #fbbf24; --accent-silly: #fb7185; --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
         * { box-sizing: border-box; transition: background-color 0.3s, border-color 0.3s; -webkit-tap-highlight-color: transparent; }
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background-color: var(--bg); color: var(--text-primary); margin: 0; padding: 20px; font-size: 15px; line-height: 1.5; -webkit-user-select: none; user-select: none; }
         /* Header */
-        header { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto 24px auto; padding-bottom: 20px; border-bottom: 1px solid var(--border); padding-top: 20px; } /* Added padding-top for status bar */
+        header { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto 24px auto; padding-bottom: 20px; border-bottom: 1px solid var(--border); padding-top: 20px; } 
         h1 { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
         .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         .btn-icon { background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow); }
@@ -59,6 +58,7 @@
         .badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: inline-block; margin-right: 8px; }
         .badge-main { background: rgba(59, 130, 246, 0.1); color: var(--primary); }
         .badge-adv { background: rgba(245, 158, 11, 0.1); color: var(--accent-math); }
+        .badge-srg { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; } /* Purple for SRG */
         .delete-btn { cursor:pointer; color:var(--text-secondary); font-weight:bold; font-size: 1.2rem; line-height: 0; }
         #fileInput { display: none; }
         /* Responsive */
@@ -77,6 +77,7 @@
         <div class="tab-container">
             <div class="tab active" onclick="setMode('Main')" id="tabMain">Main</div>
             <div class="tab" onclick="setMode('Adv')" id="tabAdv">Advanced</div>
+            <div class="tab" onclick="setMode('SRG')" id="tabSRG">SRG</div>
         </div>
         <button class="btn-icon" onclick="toggleTheme()" id="themeIcon">Dark Mode</button>
     </div>
@@ -242,7 +243,11 @@
 <script>
     // --- State ---
     let mode = 'Main';
-    let dataStore = JSON.parse(localStorage.getItem('jeeTracker_v8')) || { entries: [], goals: { Main: 250, Adv: 180 } };
+    let dataStore = JSON.parse(localStorage.getItem('jeeTracker_v8')) || { entries: [], goals: { Main: 250, Adv: 180, SRG: 200 } };
+    
+    // Migration for existing users who don't have SRG goal yet
+    if (!dataStore.goals.SRG) { dataStore.goals.SRG = 200; }
+    
     let charts = {};
 
     // --- Init ---
@@ -258,8 +263,10 @@
     // --- Core Functions ---
     function updateDefaultUI() {
         document.getElementById('targetScore').value = dataStore.goals[mode] || '';
-        document.getElementById('iMaxMarks').value = mode === 'Main' ? 300 : '';
-        document.getElementById('iMaxMarks').placeholder = mode === 'Main' ? '300' : 'e.g. 180, 360';
+        // Main usually fixed 300, Adv/SRG variable
+        const isMain = mode === 'Main';
+        document.getElementById('iMaxMarks').value = isMain ? 300 : '';
+        document.getElementById('iMaxMarks').placeholder = isMain ? '300' : 'e.g. 180, 360';
         document.getElementById('goalLabel').innerText = mode;
     }
 
@@ -267,6 +274,7 @@
         mode = newMode;
         document.getElementById('tabMain').classList.toggle('active', mode === 'Main');
         document.getElementById('tabAdv').classList.toggle('active', mode === 'Adv');
+        document.getElementById('tabSRG').classList.toggle('active', mode === 'SRG');
         updateDefaultUI();
         render();
     }
@@ -349,7 +357,14 @@
         reader.onload = (e) => {
             try {
                 const imp = JSON.parse(e.target.result);
-                if(imp.entries) { dataStore = imp; saveData(); render(); alert('Import successful!'); }
+                if(imp.entries) { 
+                    dataStore = imp; 
+                    // Import migration check
+                    if (!dataStore.goals.SRG) dataStore.goals.SRG = 200;
+                    saveData(); 
+                    render(); 
+                    alert('Import successful!'); 
+                }
             } catch(e) { alert('Invalid File'); }
         };
         reader.readAsText(file);
@@ -385,7 +400,7 @@
         const avgAcc = totalAttMarks === 0 ? 0 : ((totalScore / totalAttMarks) * 100).toFixed(1);
 
         const avgSilly = (data.reduce((a,c) => a + c.phy.silly + c.chem.silly + c.math.silly, 0) / data.length).toFixed(1);
-        const diff = data[data.length - 1].total - dataStore.goals[mode];
+        const diff = data[data.length - 1].total - (dataStore.goals[mode] || 0);
         
         document.getElementById('sAvg').innerText = avgScore;
         document.getElementById('sAcc').innerText = avgAcc + '%';
@@ -400,10 +415,14 @@
             const totAtt = ((e.phy.qAtt||0) + (e.chem.qAtt||0) + (e.math.qAtt||0));
             const acc = totAtt === 0 ? 0 : ((e.total / (totAtt*4))*100).toFixed(1);
             
+            let badgeClass = 'badge-main';
+            if(e.type === 'Adv') badgeClass = 'badge-adv';
+            if(e.type === 'SRG') badgeClass = 'badge-srg';
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${e.date}</td>
-                <td><span class="badge ${e.type==='Main'?'badge-main':'badge-adv'}">${e.type}</span> ${e.name}</td>
+                <td><span class="badge ${badgeClass}">${e.type}</span> ${e.name}</td>
                 <td>${e.phy.score}</td>
                 <td>${e.chem.score}</td>
                 <td>${e.math.score}</td>
@@ -437,9 +456,11 @@
             } 
         };
 
+        const targetVal = dataStore.goals[mode] || 0;
+
         // 1. Total Score Trend
         createChart('cTrend', 'line', { labels: dates, datasets: [{ label: 'Total Score', data: data.map(e => e.total), borderColor: '#3b82f6', tension:0.3, fill:true, backgroundColor:'rgba(59,130,246,0.1)' }] }, 
-        { ...opts, plugins: { ...opts.plugins, annotation: { annotations: { line1: { type:'line', yMin:dataStore.goals[mode], yMax:dataStore.goals[mode], borderColor:isDark?'#34d399':'#10b981', borderWidth:2, borderDash:[6,6] } } }, title:{display:true, text:'Score Trajectory', color:txt, font: {size:15, weight:'bold'}} } });
+        { ...opts, plugins: { ...opts.plugins, annotation: { annotations: { line1: { type:'line', yMin:targetVal, yMax:targetVal, borderColor:isDark?'#34d399':'#10b981', borderWidth:2, borderDash:[6,6] } } }, title:{display:true, text:'Score Trajectory', color:txt, font: {size:15, weight:'bold'}} } });
 
         // 2. ACCURACY CHART
         createChart('cAccuracy', 'line', { labels: dates, datasets: [
